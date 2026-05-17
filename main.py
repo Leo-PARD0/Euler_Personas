@@ -21,12 +21,19 @@ DEFAULT_OUTPUT_DIRS = {
     "json": Path("data/processed/overlaps.json"),
 }
 
+SUPPORT_INPUT_DIRS = [
+    Path("config/support"),
+    Path("assets/qrcode"),
+]
+
 
 def ensure_output_dirs() -> None:
     """Ensure output directories exist."""
 
     for output_path in DEFAULT_OUTPUT_DIRS.values():
         output_path.parent.mkdir(parents=True, exist_ok=True)
+    for support_dir in SUPPORT_INPUT_DIRS:
+        support_dir.mkdir(parents=True, exist_ok=True)
 
 
 def validate_csv_path(raw_path: str) -> Path:

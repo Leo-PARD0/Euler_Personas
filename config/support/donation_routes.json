@@ -1,0 +1,20 @@
+{
+  "routes": [
+    {
+      "platform": "Exemplo de plataforma de apoio",
+      "url": "https://example.com/apoio",
+      "qr_image": "../../../assets/qrcode/example.png",
+      "description": "Substitua esta entrada pelo nome da plataforma de apoio, link e imagem opcional de QR code.",
+      "enabled": false
+    },
+    {
+      "platform": "LivePIX",
+      "url": "https://livepix.gg/leo1pardo",
+      "qr_image": "../../../assets/qrcode/Livepix.png",
+      "description": "Se te ajudou me manda um live pix🫡",
+      "enabled": true
+    }
+  ]
+}
+
+

@@ -15,7 +15,8 @@ COLUMN_ALIASES = {
     "type": {"type", "tipo", "categoria"},
     "persona": {"persona"},
     "personas": {"personas", "pessoa", "pessoas"},
-    "weight": {"weight", "peso", "representatividade"},
+    "weight": {"weight", "peso", "representatividade", "representatividade (%)"},
+    "evidence": {"evidence", "origem", "origem do dado", "fonte"},
 }
 
 TYPE_ALIASES = {
@@ -73,6 +74,25 @@ def _parse_topic_type(value: object) -> TopicType:
     raise ValueError(f"Invalid topic type '{value}'. Expected Pain Point/Pain or Objetivo/Goal.")
 
 
+def _parse_representativity(value: object) -> float:
+    """Parse representativity % handling Brazilian format (comma as decimal separator)."""
+    if pd.isna(value):
+        return 0.0
+    
+    text = str(value).strip()
+    # Remove % symbol if present
+    text = text.replace("%", "").strip()
+    # Convert Brazilian format (90,30) to standard (90.30)
+    text = text.replace(",", ".")
+    
+    try:
+        result = float(text)
+        # Clamp to 0-100 range
+        return max(0.0, min(100.0, result))
+    except ValueError:
+        raise ValueError(f"Invalid representativity value '{value}'. Expected a number (e.g., '90,30%' or '90.30')")
+
+
 def load_personas(file_path: str | Path) -> list[Persona]:
     frame = _read_csv(file_path)
     _require_columns(frame, {"persona", "weight"}, file_path)
@@ -120,18 +140,30 @@ def load_topics(file_path: str | Path) -> list[Topic]:
 
 
 def load_research_csv(file_path: str | Path) -> tuple[list[Persona], list[Topic]]:
-    """Load a single research CSV with Elemento/Tipo/Pessoa columns."""
+    """Load research CSV with topic-centric model.
+    
+    CSV structure: Elemento, Tipo, Pessoa, Representatividade (%), Origem do Dado
+    
+    Returns derived personas with weights calculated as average of related topic representativities.
+    """
 
     frame = _read_csv(file_path)
     _require_columns(frame, {"topic", "type", "personas"}, file_path)
 
     topics: list[Topic] = []
     persona_names: set[str] = set()
+    persona_topics: dict[str, list[float]] = {}  # persona -> [representativities]
 
     for index, row in frame.iterrows():
         name = _normalize_text(row["topic"])
         topic_type = _parse_topic_type(row["type"])
         personas = _parse_persona_names(row["personas"])
+        
+        # Read representativity (new field)
+        representativity = _parse_representativity(row.get("weight", 0.0))
+        
+        # Read evidence/origin (optional)
+        evidence = _normalize_text(row.get("evidence", "")) if "evidence" in row else ""
 
         if not name:
             raise ValueError(f"Empty topic/element name at row {index + 2}")
@@ -139,23 +171,36 @@ def load_research_csv(file_path: str | Path) -> tuple[list[Persona], list[Topic]
             raise ValueError(f"Topic '{name}' must reference at least one person/persona")
 
         persona_names.update(personas)
+        
+        # Track representativity for each persona
+        for persona in personas:
+            if persona not in persona_topics:
+                persona_topics[persona] = []
+            persona_topics[persona].append(representativity)
 
         topics.append(
             Topic(
                 name=name,
                 type=topic_type,
                 personas=personas,
+                representativity=representativity,
                 overlap_level=len(personas),
+                evidence=evidence,
             )
         )
 
-    personas = [
-        Persona(
-            name=name,
-            weight=100.0,
-            color=persona_color(index),
+    # Create personas with derived weights (average of their topics' representativities)
+    personas = []
+    for index, persona_name in enumerate(sorted(persona_names)):
+        topic_representativities = persona_topics.get(persona_name, [0.0])
+        derived_weight = sum(topic_representativities) / len(topic_representativities)
+        
+        personas.append(
+            Persona(
+                name=persona_name,
+                weight=derived_weight,
+                color=persona_color(index),
+            )
         )
-        for index, name in enumerate(sorted(persona_names))
-    ]
 
     return personas, topics

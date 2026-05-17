@@ -103,6 +103,7 @@ def _add_topic_points(
         xs: list[float] = []
         ys: list[float] = []
         hover_texts: list[str] = []
+        sizes: list[float] = []  # NEW: dynamic sizes based on representativity
 
         for persona_names, region_topics in grouped_by_region.items():
             for index, topic in enumerate(region_topics):
@@ -117,6 +118,11 @@ def _add_topic_points(
                 xs.append(x)
                 ys.append(y)
                 hover_texts.append(build_topic_tooltip(topic))
+                
+                # NEW: Scale marker size by representativity (0-100% -> 5-25px)
+                representativity = topic.get("representativity", 50.0)
+                marker_size = 5 + (representativity / 100.0) * 20
+                sizes.append(marker_size)
 
         fig.add_trace(
             go.Scatter(
@@ -124,7 +130,7 @@ def _add_topic_points(
                 y=ys,
                 mode="markers",
                 marker={
-                    "size": 13,
+                    "size": sizes,  # CHANGED: now dynamic
                     "symbol": symbol,
                     "color": topic_color(topic_type),
                     "line": {"color": "white", "width": 1.5},

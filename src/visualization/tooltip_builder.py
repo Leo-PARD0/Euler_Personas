@@ -11,13 +11,24 @@ def build_topic_tooltip(topic: dict[str, object]) -> str:
     personas = [escape(str(persona)) for persona in topic["personas"]]
 
     shared_by = "<br>".join(f"- {persona}" for persona in personas)
+    
+    # NEW: include representativity
+    representativity = topic.get("representativity", 0.0)
+    impact_score = float(topic['impact_score'])
+    
+    # NEW: include evidence if available
+    evidence = topic.get("evidence", "")
+    evidence_text = f"<br><br><b>Evidence:</b><br>{escape(evidence)}" if evidence else ""
+    
     return (
         f"<b>{topic_type}</b>"
         "<br>--------------------------------"
         f"<br>{topic_name}"
         "<br><br><b>Shared by:</b>"
         f"<br>{shared_by}"
-        f"<br><br><b>Impact Score:</b> {float(topic['impact_score']):.2f}"
+        f"<br><br><b>Representativity:</b> {representativity:.2f}%"
+        f"<br><b>Impact Score:</b> {impact_score:.2f}"
+        f"{evidence_text}"
     )
 
 

@@ -1,15 +1,17 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 from textwrap import fill
 
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
-from matplotlib.patches import Circle
+from matplotlib.patches import Circle, FancyBboxPatch
 from matplotlib.widgets import Button, CheckButtons, Slider, TextBox
 
 from src.models.persona import Persona
 from src.utils.colors import topic_color
+from src.visualization.support_page import load_support_routes
 from src.visualization.venn_layout import assign_weighted_circle_layout, persona_label_position, topic_position
 
 
@@ -26,10 +28,14 @@ def render_weighted_persona_map(
 
     bottom_margin = 0.12 + min(len(personas), 8) * 0.045 if interactive_controls else 0.08
     fig, ax = plt.subplots(figsize=(13, 9))
-    fig.subplots_adjust(bottom=bottom_margin)
+    fig.subplots_adjust(bottom=bottom_margin, top=0.88)
     ax.set_aspect("equal")
     ax.axis("off")
     ax.set_title(title, fontsize=18, weight="bold", pad=18)
+    support_ax = fig.add_axes(ax.get_position(), label="apoio-dashboard")
+    support_ax.set_axis_off()
+    support_ax.set_visible(False)
+    support_artists = _draw_support_dashboard(support_ax)
 
     persona_circles: dict[str, Circle] = {}
     persona_labels = {}
@@ -79,10 +85,13 @@ def render_weighted_persona_map(
     _build_legend(ax)
     _connect_hover(fig, ax, topic_artists, annotation)
 
+    control_axes = []
     if interactive_controls:
-        _build_weight_sliders(fig, personas, redraw_layout)
+        control_axes.extend(_build_weight_sliders(fig, personas, redraw_layout))
         if export_callback is not None:
-            _build_export_panel(fig, export_callback)
+            control_axes.extend(_build_export_panel(fig, export_callback))
+
+    _build_page_tabs(fig, ax, support_ax, control_axes, support_artists)
 
     return fig
 
@@ -186,11 +195,12 @@ def _connect_hover(fig: Figure, ax, topic_artists: list[dict[str, object]], anno
     fig.canvas.mpl_connect("motion_notify_event", on_move)
 
 
-def _build_weight_sliders(fig: Figure, personas: list[Persona], on_change) -> None:
+def _build_weight_sliders(fig: Figure, personas: list[Persona], on_change) -> list:
     slider_height = 0.025
     slider_gap = 0.012
     start_y = 0.035
     max_sliders = min(len(personas), 8)
+    control_axes = []
 
     for index, persona in enumerate(personas[:max_sliders]):
         y = start_y + index * (slider_height + slider_gap)
@@ -205,6 +215,7 @@ def _build_weight_sliders(fig: Figure, personas: list[Persona], on_change) -> No
         )
         input_axis = fig.add_axes([0.72, y, 0.08, slider_height])
         text_box = TextBox(input_axis, "", initial=f"{persona.weight:.2f}")
+        control_axes.extend([slider_axis, input_axis])
         syncing = {"active": False}
 
         def apply_weight(
@@ -259,8 +270,10 @@ def _build_weight_sliders(fig: Figure, personas: list[Persona], on_change) -> No
         fig._persona_weight_sliders.append(slider)
         fig._persona_weight_inputs.append(text_box)
 
+    return control_axes
 
-def _build_export_panel(fig: Figure, export_callback) -> None:
+
+def _build_export_panel(fig: Figure, export_callback) -> list:
     export_button_axis = fig.add_axes([0.84, 0.035, 0.1, 0.035])
     export_button = Button(export_button_axis, "Export")
 
@@ -305,6 +318,210 @@ def _build_export_panel(fig: Figure, export_callback) -> None:
     fig._export_button = export_button
     fig._export_checks = checks
     fig._export_confirm_button = confirm_button
+    return [export_button_axis, check_axis, confirm_axis]
+
+
+def _build_page_tabs(
+    fig: Figure,
+    map_ax,
+    support_ax,
+    control_axes: list,
+    support_artists: list,
+) -> None:
+    map_button_axis = fig.add_axes([0.405, 0.925, 0.09, 0.038])
+    support_button_axis = fig.add_axes([0.505, 0.925, 0.09, 0.038])
+    map_button = Button(map_button_axis, "Mapa")
+    support_button = Button(support_button_axis, "Apoio")
+    control_visibility = {}
+
+    def set_active_page(page: str) -> None:
+        showing_support = page == "support"
+        map_ax.set_visible(not showing_support)
+        support_ax.set_visible(showing_support)
+
+        for axis in control_axes:
+            if showing_support:
+                control_visibility[axis] = axis.get_visible()
+                axis.set_visible(False)
+            else:
+                axis.set_visible(control_visibility.get(axis, axis.get_visible()))
+        for artist in support_artists:
+            artist.set_visible(showing_support)
+
+        map_button_axis.set_facecolor("#e6eef6" if not showing_support else "#f6f7fb")
+        support_button_axis.set_facecolor("#e6eef6" if showing_support else "#f6f7fb")
+        fig.canvas.draw_idle()
+
+    map_button.on_clicked(lambda _event: set_active_page("map"))
+    support_button.on_clicked(lambda _event: set_active_page("support"))
+
+    fig._page_tabs = {"map": map_button, "support": support_button}
+    fig._support_axis = support_ax
+    set_active_page("map")
+
+
+def _draw_support_dashboard(ax) -> list:
+    routes = load_support_routes()
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_facecolor("#f8fafc")
+
+    ax.text(
+        0.05,
+        0.93,
+        "Apoio",
+        fontsize=30,
+        weight="bold",
+        color="#1f2937",
+        transform=ax.transAxes,
+    )
+
+    ax.text(
+        0.05,
+        0.885,
+        "Rotas de apoio configuradas em config/support/donation_routes.json",
+        fontsize=12,
+        color="#667085",
+        transform=ax.transAxes,
+    )
+
+    image_axes = []
+
+    if not routes:
+        ax.text(
+            0.05,
+            0.74,
+            "Nenhuma rota ativa. Adicione plataformas de apoio no JSON e QR codes em assets/qrcode/.",
+            fontsize=14,
+            color="#344054",
+            transform=ax.transAxes,
+            bbox={
+                "boxstyle": "round,pad=0.8",
+                "fc": "#ffffff",
+                "ec": "#d9e1ec",
+            },
+        )
+        return image_axes
+
+    card_height = 0.20
+    card_spacing = 0.235
+
+    for index, route in enumerate(routes[:5]):
+
+        card_height = 0.24
+        card_spacing = 0.27
+
+        y = 0.58 - index * card_spacing
+
+        card = FancyBboxPatch(
+            (0.05, y),
+            0.9,
+            card_height,
+            boxstyle="round,pad=0.018,rounding_size=0.02",
+            linewidth=1.4,
+            edgecolor="#d9e1ec",
+            facecolor="#ffffff",
+            transform=ax.transAxes,
+        )
+
+        ax.add_patch(card)
+
+        # QR code em destaque.
+        qr_size = 0.20
+
+        qr_axis = ax.inset_axes([
+            0.075,
+            y + 0.02,
+            qr_size,
+            qr_size,
+        ])
+
+        qr_axis.set_axis_off()
+
+        image_axes.append(qr_axis)
+
+        qr_path = _resolve_qr_path(route.get("qr_image", ""))
+
+        if qr_path is not None:
+            qr_axis.imshow(
+                plt.imread(qr_path),
+                interpolation="nearest",
+            )
+        else:
+            qr_axis.text(
+                0.5,
+                0.5,
+                "QR",
+                ha="center",
+                va="center",
+                fontsize=18,
+                weight="bold",
+                color="#98a2b3",
+                transform=qr_axis.transAxes,
+            )
+
+        text_x = 0.32
+
+        # TÃTULO
+        ax.text(
+            text_x,
+            y + 0.15,
+            route["platform"],
+            fontsize=21,
+            weight="bold",
+            color="#1f2937",
+            transform=ax.transAxes,
+        )
+
+        # URL da plataforma de apoio.
+        url = route.get("url") or "Link nao configurado"
+
+        ax.text(
+            text_x,
+            y + 0.105,
+            url,
+            fontsize=12.5,
+            color="#146c94",
+            transform=ax.transAxes,
+        )
+
+        # DESCRIÃ‡ÃƒO
+        if route.get("description"):
+            ax.text(
+                text_x,
+                y + 0.065,
+                fill(route["description"], width=58),
+                fontsize=11,
+                color="#667085",
+                transform=ax.transAxes,
+            )
+ 
+    if len(routes) > 5:
+        ax.text(
+            0.05,
+            0.02,
+            f"+ {len(routes) - 5} rota(s) adicional(is) no JSON.",
+            fontsize=10,
+            color="#667085",
+            transform=ax.transAxes,
+        )
+
+    return image_axes
+
+def _resolve_qr_path(raw_path: str) -> Path | None:
+    if not raw_path:
+        return None
+
+    candidates = [
+        Path(raw_path),
+        Path("data/outputs/diagrams") / raw_path,
+        Path(raw_path.replace("../", "")),
+    ]
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
 
 
 def _build_legend(ax) -> None:
@@ -323,3 +540,4 @@ def _update_bounds(ax, personas: list[Persona]) -> None:
     )
     ax.set_xlim(-max_extent, max_extent)
     ax.set_ylim(-max_extent, max_extent)
+

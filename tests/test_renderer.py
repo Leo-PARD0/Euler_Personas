@@ -99,3 +99,22 @@ def test_renderer_adds_export_panel_when_callback_is_provided():
     assert hasattr(fig, "_export_button")
     assert hasattr(fig, "_export_checks")
     assert hasattr(fig, "_export_confirm_button")
+
+
+def test_renderer_adds_support_dashboard_page():
+    personas = [Persona("A", 100), Persona("B", 100)]
+    topics = [
+        {
+            "name": "Shared topic",
+            "type": "Goal",
+            "personas": ["A", "B"],
+            "impact_score": 200,
+        }
+    ]
+
+    fig = render_weighted_persona_map(personas, topics)
+
+    assert hasattr(fig, "_page_tabs")
+    assert "support" in fig._page_tabs
+    assert hasattr(fig, "_support_axis")
+    assert fig._support_axis.get_visible() is False
